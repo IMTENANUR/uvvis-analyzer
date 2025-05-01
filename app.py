@@ -38,7 +38,12 @@ if uploaded_files and concentrations_input:
             ax_uvvis.legend(title="Concentration")
             ax_uvvis.grid(True)
             st.pyplot(fig_uvvis)
+from io import BytesIO
 
+# Convert UV-Vis figure to BytesIO
+buf_uvvis = BytesIO()
+fig_uvvis.savefig(buf_uvvis, format="png")
+st.download_button("📥 Download UV-Vis Plot", buf_uvvis.getvalue(), "uvvis_plot.png", "image/png")
             df_peaks = pd.DataFrame(peak_data).sort_values("Concentration")
             slope, intercept, r_value, _, _ = linregress(df_peaks["Concentration"], df_peaks["Absorbance"])
             df_peaks["Fitted"] = slope * df_peaks["Concentration"] + intercept
@@ -53,6 +58,10 @@ if uploaded_files and concentrations_input:
             ax_beer.legend()
             ax_beer.grid(True)
             st.pyplot(fig_beer)
+buf_beer = BytesIO()
+fig_beer.savefig(buf_beer, format="png")
+st.download_button("📥 Download Beer-Lambert Plot", buf_beer.getvalue(), "beerlambert_plot.png", "image/png")
+
 
             st.success("Analysis complete.")
 
