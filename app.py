@@ -16,25 +16,32 @@ and enter corresponding concentrations (in mol/dm³) below.
 
 uploaded_files = st.file_uploader("Upload your .txt data files", type="txt", accept_multiple_files=True)
 concentrations_input = st.text_input("Enter concentrations (mol/dm³) in order, comma-separated")
+labels_input = st.text_input("Enter labels for legend (optional, comma-separated)")
+compound_title = st.text_input("Enter compound name for graph titles")
 
 if uploaded_files and concentrations_input:
     try:
         concentrations = [float(x.strip()) for x in concentrations_input.split(",")]
+        custom_labels = [x.strip() for x in labels_input.split(",")] if labels_input else None
+
         if len(concentrations) != len(uploaded_files):
             st.error("Number of concentrations must match number of files.")
+        elif custom_labels and len(custom_labels) != len(uploaded_files):
+            st.error("Number of custom labels must match number of files.")
         else:
             peak_data = []
             fig_uvvis, ax_uvvis = plt.subplots(figsize=(10, 5))
 
-            for file, conc in zip(uploaded_files, concentrations):
+            for idx, (file, conc) in enumerate(zip(uploaded_files, concentrations)):
                 df = pd.read_csv(file, sep="\t", header=None, names=["Wavelength", "Absorbance"])
                 df = df[(df["Wavelength"] >= 190) & (df["Wavelength"] <= 320) & (df["Absorbance"] > 0)]
                 sci_label = f"{conc:.2e}".replace("e-0", "e-").replace("e", " × 10^").replace("^0", "^0")
-                ax_uvvis.plot(df["Wavelength"], df["Absorbance"], label=f"{sci_label} mol/L")
+                label = f"{custom_labels[idx]} ({sci_label} mol/L)" if custom_labels else f"{sci_label} mol/L"
+                ax_uvvis.plot(df["Wavelength"], df["Absorbance"], label=label)
                 peak = df.loc[df["Absorbance"].idxmax()]
                 peak_data.append({"Concentration": conc, "Absorbance": peak["Absorbance"], "Lambda_max": peak["Wavelength"]})
 
-            ax_uvvis.set_title("UV-Vis Spectra")
+            ax_uvvis.set_title(compound_title or "UV-Vis Spectra")
             ax_uvvis.set_xlabel("Wavelength (nm)")
             ax_uvvis.set_ylabel("Absorbance")
             ax_uvvis.legend(title="Concentration")
@@ -53,7 +60,7 @@ if uploaded_files and concentrations_input:
             ax_beer.scatter(df_peaks["Concentration"], df_peaks["Absorbance"], color='blue', label='Measured')
             ax_beer.plot(df_peaks["Concentration"], df_peaks["Fitted"], color='red', linestyle='--',
                          label=f"Fit: ε = {slope:.2f} L·mol⁻¹·cm⁻¹\n$R^2$ = {r_value**2:.4f}")
-            ax_beer.set_title("Beer-Lambert Plot")
+            ax_beer.set_title(compound_title or "Beer-Lambert Plot")
             ax_beer.set_xlabel("Concentration (mol/dm³)")
             ax_beer.set_ylabel("Absorbance")
             ax_beer.legend()
