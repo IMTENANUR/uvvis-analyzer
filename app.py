@@ -29,7 +29,8 @@ if uploaded_files and concentrations_input:
             for file, conc in zip(uploaded_files, concentrations):
                 df = pd.read_csv(file, sep="\t", header=None, names=["Wavelength", "Absorbance"])
                 df = df[(df["Wavelength"] >= 190) & (df["Wavelength"] <= 320) & (df["Absorbance"] > 0)]
-                ax_uvvis.plot(df["Wavelength"], df["Absorbance"], label=f"{conc:.6f} mol/L")
+                sci_label = f"{conc:.2e}".replace("e-0", "e-").replace("e", " × 10^").replace("^0", "^0")
+                ax_uvvis.plot(df["Wavelength"], df["Absorbance"], label=f"{sci_label} mol/L")
                 peak = df.loc[df["Absorbance"].idxmax()]
                 peak_data.append({"Concentration": conc, "Absorbance": peak["Absorbance"], "Lambda_max": peak["Wavelength"]})
 
