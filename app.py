@@ -62,11 +62,12 @@ if file_entries:
         label = f"${sci_val[0]} \times 10^{{{int(sci_val[1])}}}$"
         ax.plot(df["Wavelength"], df["Absorbance"], label=label)
 
-        peak = df.loc[df["Absorbance"].idxmax()]
-        peak_data.append({"Concentration": entry["concentration"], "Absorbance": peak["Absorbance"], "Lambda_max": peak["Wavelength"]})
+        if not df.empty:
+            peak = df.loc[df["Absorbance"].idxmax()]
+            peak_data.append({"Concentration": entry["concentration"], "Absorbance": peak["Absorbance"], "Lambda_max": peak["Wavelength"]})
 
-        if df["Absorbance"].max() > max_abs:
-            max_abs = df["Absorbance"].max()
+            if df["Absorbance"].max() > max_abs:
+                max_abs = df["Absorbance"].max()
 
     ax.set_xlabel("Wavelength / nm")
     ax.set_ylabel("Absorbance")
@@ -81,23 +82,27 @@ if file_entries:
     # === Beer-Lambert ===
     st.subheader("Beer-Lambert Plot")
     df_peak = pd.DataFrame(peak_data).sort_values("Concentration")
-    slope, intercept, r_value, _, _ = linregress(df_peak["Concentration"], df_peak["Absorbance"])
-    df_peak["Fitted"] = slope * df_peak["Concentration"] + intercept
 
-    fig2, ax2 = plt.subplots(figsize=(8, 5))
-    ax2.scatter(df_peak["Concentration"], df_peak["Absorbance"], color='blue')
-    line, = ax2.plot(df_peak["Concentration"], df_peak["Fitted"], color='red', linestyle='--',
-                     label=f"$\\varepsilon$ = {round(slope)} L mol⁻¹ cm⁻¹\n$R^2$ = {r_value**2:.4f}")
+    if len(df_peak) >= 2:
+        slope, intercept, r_value, _, _ = linregress(df_peak["Concentration"], df_peak["Absorbance"])
+        df_peak["Fitted"] = slope * df_peak["Concentration"] + intercept
 
-    ax2.set_xlabel("Concentration / mol dm⁻³")
-    ax2.set_ylabel("Absorbance")
-    ax2.set_title("Beer-Lambert Plot")
-    ax2.legend(handles=[line])
-    st.pyplot(fig2)
+        fig2, ax2 = plt.subplots(figsize=(8, 5))
+        ax2.scatter(df_peak["Concentration"], df_peak["Absorbance"], color='blue')
+        line, = ax2.plot(df_peak["Concentration"], df_peak["Fitted"], color='red', linestyle='--',
+                         label=f"$\\varepsilon$ = {round(slope)} L mol⁻¹ cm⁻¹\n$R^2$ = {r_value**2:.4f}")
 
-    buf2 = BytesIO()
-    fig2.savefig(buf2, format="png")
-    st.download_button("Download Beer-Lambert Plot", buf2.getvalue(), file_name="beer_lambert.png", mime="image/png")
+        ax2.set_xlabel("Concentration / mol dm⁻³")
+        ax2.set_ylabel("Absorbance")
+        ax2.set_title("Beer-Lambert Plot")
+        ax2.legend(handles=[line])
+        st.pyplot(fig2)
+
+        buf2 = BytesIO()
+        fig2.savefig(buf2, format="png")
+        st.download_button("Download Beer-Lambert Plot", buf2.getvalue(), file_name="beer_lambert.png", mime="image/png")
+    else:
+        st.warning("At least two valid data points are required to compute the Beer-Lambert regression.")
 
     st.subheader("Peak Absorbance Table")
     st.dataframe(df_peak)
