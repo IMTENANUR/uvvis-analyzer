@@ -12,95 +12,71 @@ st.title("Multi-Compound UV-Vis & Beer-Lambert Plotter")
 os.makedirs("data", exist_ok=True)
 
 st.markdown("""
-You can upload your `.txt` files below (tab-separated: Wavelength, Absorbance).
-After uploading, assign files, concentrations, and wavelength ranges for each compound.
+Upload your `.txt` files (tab-separated: Wavelength and Absorbance).
+Then manually enter the **concentration** and **wavelength range** for each file.
 """)
 
 # === File uploader ===
 uploaded_files = st.file_uploader("Upload TXT Files", type="txt", accept_multiple_files=True)
+
+file_entries = []
+
 if uploaded_files:
-    for uploaded_file in uploaded_files:
+    st.subheader("Input Settings Per File")
+    for i, uploaded_file in enumerate(uploaded_files):
         with open(os.path.join("data", uploaded_file.name), "wb") as f:
             f.write(uploaded_file.getbuffer())
 
-# === File loader ===
-data_dir = "data"
-all_files = sorted([f for f in os.listdir(data_dir) if f.endswith(".txt")])
-if not all_files:
-    st.warning("No data files found in the 'data/' folder.")
-    st.stop()
+        st.markdown(f"**{uploaded_file.name}**")
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            conc = st.text_input(f"Concentration (mol dm⁻³) for {uploaded_file.name}", value="0.001", key=f"conc_{i}")
+        with col2:
+            wl_start = st.number_input(f"Wavelength Start (nm) for {uploaded_file.name}", value=185, step=1, key=f"start_{i}")
+        with col3:
+            wl_end = st.number_input(f"Wavelength End (nm) for {uploaded_file.name}", value=320, step=1, key=f"end_{i}")
 
-# === Compound Input Section ===
-st.sidebar.header("Define Compounds")
-compound_count = st.sidebar.number_input("Number of Compounds", min_value=1, max_value=5, value=3, step=1)
-
-compound_data = []
-used_files = set()
-
-for i in range(compound_count):
-    st.sidebar.markdown(f"### Compound {i+1}")
-    name = st.sidebar.text_input(f"Compound {i+1} Name", value=f"Compound {i+1}")
-    wl_start = st.sidebar.number_input(f"Wavelength Start (nm) - {name}", value=185, step=1, key=f"start{i}")
-    wl_end = st.sidebar.number_input(f"Wavelength End (nm) - {name}", value=320, step=1, key=f"end{i}")
-
-    st.sidebar.markdown(f"**Assign files for {name}:**")
-    selected = st.sidebar.multiselect(f"Files for {name}", [f for f in all_files if f not in used_files], key=f"files{i}")
-
-    file_conc_map = {}
-    for fname in selected:
-        val = st.sidebar.text_input(f"Concentration (mol dm⁻³) for {fname}", value="0.001", key=f"conc_{i}_{fname}")
         try:
-            file_conc_map[fname] = float(val)
+            file_entries.append({
+                "file": uploaded_file.name,
+                "concentration": float(conc),
+                "wl_start": wl_start,
+                "wl_end": wl_end
+            })
         except:
-            st.sidebar.error(f"Invalid concentration for {fname} in {name}")
-            st.stop()
+            st.error(f"Invalid concentration input for {uploaded_file.name}")
 
-    used_files.update(selected)
-    compound_data.append({
-        "name": name,
-        "files": file_conc_map,
-        "xrange": (wl_start, wl_end)
-    })
-
-# === Plotting ===
-for compound in compound_data:
-    name = compound["name"]
-    files = compound["files"]
-    wl_start, wl_end = compound["xrange"]
-
-    st.header(f"{name}")
-    st.subheader("UV-Vis Spectrum")
-
+# === Plotting if data is present ===
+if file_entries:
+    st.header("Combined UV-Vis Spectrum")
     fig, ax = plt.subplots(figsize=(10, 5))
     max_abs = 0
     peak_data = []
 
-    for fname, conc in files.items():
-        df = pd.read_csv(os.path.join(data_dir, fname), sep="\t", header=None, names=["Wavelength", "Absorbance"])
-        df = df[(df["Wavelength"] >= wl_start) & (df["Wavelength"] <= wl_end)]
+    for entry in file_entries:
+        df = pd.read_csv(os.path.join("data", entry["file"]), sep="\t", header=None, names=["Wavelength", "Absorbance"])
+        df = df[(df["Wavelength"] >= entry["wl_start"]) & (df["Wavelength"] <= entry["wl_end"])]
         df = df[df["Absorbance"] > 0]
 
-        sci_val = f"{conc:.2e}".split("e")
+        sci_val = f"{entry['concentration']:.2e}".split("e")
         label = f"${sci_val[0]} \times 10^{{{int(sci_val[1])}}}$"
         ax.plot(df["Wavelength"], df["Absorbance"], label=label)
 
         peak = df.loc[df["Absorbance"].idxmax()]
-        peak_data.append({"Concentration": conc, "Absorbance": peak["Absorbance"], "Lambda_max": peak["Wavelength"]})
+        peak_data.append({"Concentration": entry["concentration"], "Absorbance": peak["Absorbance"], "Lambda_max": peak["Wavelength"]})
 
         if df["Absorbance"].max() > max_abs:
             max_abs = df["Absorbance"].max()
 
     ax.set_xlabel("Wavelength / nm")
     ax.set_ylabel("Absorbance")
-    ax.set_xlim(wl_start, wl_end)
     ax.set_ylim(0, max_abs * 1.1)
-    ax.set_title(f"{name} - UV-Vis Spectrum")
     ax.legend(title="Concentration / mol dm⁻³")
     st.pyplot(fig)
 
     buf1 = BytesIO()
     fig.savefig(buf1, format="png")
-    st.download_button(f"Download UV-Vis Plot for {name}", buf1.getvalue(), file_name=f"{name}_uvvis.png", mime="image/png")
+    st.download_button("Download UV-Vis Plot", buf1.getvalue(), file_name="combined_uvvis.png", mime="image/png")
 
     # === Beer-Lambert ===
     st.subheader("Beer-Lambert Plot")
@@ -115,15 +91,15 @@ for compound in compound_data:
 
     ax2.set_xlabel("Concentration / mol dm⁻³")
     ax2.set_ylabel("Absorbance")
-    ax2.set_title(f"{name} - Beer-Lambert Plot")
+    ax2.set_title("Beer-Lambert Plot")
     ax2.legend(handles=[line])
     st.pyplot(fig2)
 
     buf2 = BytesIO()
     fig2.savefig(buf2, format="png")
-    st.download_button(f"Download Beer-Lambert Plot for {name}", buf2.getvalue(), file_name=f"{name}_beer_lambert.png", mime="image/png")
+    st.download_button("Download Beer-Lambert Plot", buf2.getvalue(), file_name="beer_lambert.png", mime="image/png")
 
     st.subheader("Peak Absorbance Table")
     st.dataframe(df_peak)
 
-st.success("Done rendering all compounds.")
+st.success("Done rendering all files.")
