@@ -3,6 +3,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from scipy.stats import linregress
 import os
+from io import BytesIO
 
 st.set_page_config(layout="wide")
 st.title("Multi-Compound UV-Vis & Beer-Lambert Plotter")
@@ -11,13 +12,16 @@ st.title("Multi-Compound UV-Vis & Beer-Lambert Plotter")
 os.makedirs("data", exist_ok=True)
 
 st.markdown("""
-Upload your `.txt` spectral data files into the `data/` folder.
-Each file must contain **two tab-separated columns**:
-1. Wavelength (nm)
-2. Absorbance
-
-Below, enter the name, wavelength range, and associated files + concentrations for **each compound**.
+You can upload your `.txt` files below (tab-separated: Wavelength, Absorbance).
+After uploading, assign files, concentrations, and wavelength ranges for each compound.
 """)
+
+# === File uploader ===
+uploaded_files = st.file_uploader("Upload TXT Files", type="txt", accept_multiple_files=True)
+if uploaded_files:
+    for uploaded_file in uploaded_files:
+        with open(os.path.join("data", uploaded_file.name), "wb") as f:
+            f.write(uploaded_file.getbuffer())
 
 # === File loader ===
 data_dir = "data"
@@ -77,7 +81,7 @@ for compound in compound_data:
         df = df[df["Absorbance"] > 0]
 
         sci_val = f"{conc:.2e}".split("e")
-        label = f"${sci_val[0]} \\times 10^{{{int(sci_val[1])}}}$"
+        label = f"${sci_val[0]} \times 10^{{{int(sci_val[1])}}}$"
         ax.plot(df["Wavelength"], df["Absorbance"], label=label)
 
         peak = df.loc[df["Absorbance"].idxmax()]
@@ -93,6 +97,10 @@ for compound in compound_data:
     ax.set_title(f"{name} - UV-Vis Spectrum")
     ax.legend(title="Concentration / mol dm⁻³")
     st.pyplot(fig)
+
+    buf1 = BytesIO()
+    fig.savefig(buf1, format="png")
+    st.download_button(f"Download UV-Vis Plot for {name}", buf1.getvalue(), file_name=f"{name}_uvvis.png", mime="image/png")
 
     # === Beer-Lambert ===
     st.subheader("Beer-Lambert Plot")
@@ -110,6 +118,10 @@ for compound in compound_data:
     ax2.set_title(f"{name} - Beer-Lambert Plot")
     ax2.legend(handles=[line])
     st.pyplot(fig2)
+
+    buf2 = BytesIO()
+    fig2.savefig(buf2, format="png")
+    st.download_button(f"Download Beer-Lambert Plot for {name}", buf2.getvalue(), file_name=f"{name}_beer_lambert.png", mime="image/png")
 
     st.subheader("Peak Absorbance Table")
     st.dataframe(df_peak)
