@@ -2,78 +2,113 @@ import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 from scipy.stats import linregress
-from io import BytesIO
+import os
 
-st.set_page_config(page_title="UV-Vis & Beer-Lambert Analyzer", layout="wide")
-st.title("UV-Vis Spectrum & Beer-Lambert Plot Generator")
+st.set_page_config(layout="wide")
+st.title("Multi-Compound UV-Vis & Beer-Lambert Plotter")
 
 st.markdown("""
-Upload your UV-Vis `.txt` files (tab-delimited, two columns: wavelength and absorbance),
-and enter corresponding concentrations (in mol/dm³) below.
+Upload your `.txt` spectral data files into the `data/` folder.
+Each file must contain **two tab-separated columns**:
+1. Wavelength (nm)
+2. Absorbance
 
-**Note**: Data will be trimmed to 190–320 nm and only positive absorbance values will be plotted.
+Below, enter the name, wavelength range, and associated files + concentrations for **each compound**.
 """)
 
-uploaded_files = st.file_uploader("Upload your .txt data files", type="txt", accept_multiple_files=True)
-concentrations_input = st.text_input("Enter concentrations (mol/dm³) in order, comma-separated")
-labels_input = st.text_input("Enter labels for legend (optional, comma-separated)")
-compound_title = st.text_input("Enter compound name for graph titles")
+# === File loader ===
+data_dir = "data"
+all_files = sorted([f for f in os.listdir(data_dir) if f.endswith(".txt")])
+if not all_files:
+    st.warning("No data files found in the 'data/' folder.")
+    st.stop()
 
-if uploaded_files and concentrations_input:
-    try:
-        concentrations = [float(x.strip()) for x in concentrations_input.split(",")]
-        custom_labels = [x.strip() for x in labels_input.split(",")] if labels_input else None
+# === Compound Input Section ===
+st.sidebar.header("Define Compounds")
+compound_count = st.sidebar.number_input("Number of Compounds", min_value=1, max_value=5, value=3, step=1)
 
-        if len(concentrations) != len(uploaded_files):
-            st.error("Number of concentrations must match number of files.")
-        elif custom_labels and len(custom_labels) != len(uploaded_files):
-            st.error("Number of custom labels must match number of files.")
-        else:
-            peak_data = []
-            fig_uvvis, ax_uvvis = plt.subplots(figsize=(10, 5))
+compound_data = []
+used_files = set()
 
-            for idx, (file, conc) in enumerate(zip(uploaded_files, concentrations)):
-                df = pd.read_csv(file, sep="\t", header=None, names=["Wavelength", "Absorbance"])
-                df = df[(df["Wavelength"] >= 190) & (df["Wavelength"] <= 320) & (df["Absorbance"] > 0)]
-                sci_label = f"{conc:.2e}".replace("e-0", "e-").replace("e", " × 10^").replace("^0", "^0")
-                label = f"{custom_labels[idx]} ({sci_label} mol/L)" if custom_labels else f"{sci_label} mol/L"
-                ax_uvvis.plot(df["Wavelength"], df["Absorbance"], label=label)
-                peak = df.loc[df["Absorbance"].idxmax()]
-                peak_data.append({"Concentration": conc, "Absorbance": peak["Absorbance"], "Lambda_max": peak["Wavelength"]})
+for i in range(compound_count):
+    st.sidebar.markdown(f"### Compound {i+1}")
+    name = st.sidebar.text_input(f"Compound {i+1} Name", value=f"Compound {i+1}")
+    wl_start = st.sidebar.number_input(f"Wavelength Start (nm) - {name}", value=185, step=1, key=f"start{i}")
+    wl_end = st.sidebar.number_input(f"Wavelength End (nm) - {name}", value=320, step=1, key=f"end{i}")
 
-            ax_uvvis.set_title(compound_title or "UV-Vis Spectra")
-            ax_uvvis.set_xlabel("Wavelength (nm)")
-            ax_uvvis.set_ylabel("Absorbance")
-            ax_uvvis.legend(title="Concentration")
-            ax_uvvis.grid(True)
-            st.pyplot(fig_uvvis)
+    st.sidebar.markdown(f"**Assign files for {name}:**")
+    selected = st.sidebar.multiselect(f"Files for {name}", [f for f in all_files if f not in used_files], key=f"files{i}")
 
-            buf_uvvis = BytesIO()
-            fig_uvvis.savefig(buf_uvvis, format="png")
-            st.download_button("📥 Download UV-Vis Plot", buf_uvvis.getvalue(), "uvvis_plot.png", "image/png")
+    file_conc_map = {}
+    for fname in selected:
+        val = st.sidebar.text_input(f"Concentration (mol dm⁻³) for {fname}", value="0.001", key=f"conc_{i}_{fname}")
+        try:
+            file_conc_map[fname] = float(val)
+        except:
+            st.sidebar.error(f"Invalid concentration for {fname} in {name}")
+            st.stop()
 
-            df_peaks = pd.DataFrame(peak_data).sort_values("Concentration")
-            slope, intercept, r_value, _, _ = linregress(df_peaks["Concentration"], df_peaks["Absorbance"])
-            df_peaks["Fitted"] = slope * df_peaks["Concentration"] + intercept
+    used_files.update(selected)
+    compound_data.append({
+        "name": name,
+        "files": file_conc_map,
+        "xrange": (wl_start, wl_end)
+    })
 
-            fig_beer, ax_beer = plt.subplots(figsize=(7, 5))
-            ax_beer.scatter(df_peaks["Concentration"], df_peaks["Absorbance"], color='blue', label='Measured')
-            ax_beer.plot(df_peaks["Concentration"], df_peaks["Fitted"], color='red', linestyle='--',
-                         label=f"Fit: ε = {slope:.2f} L·mol⁻¹·cm⁻¹\n$R^2$ = {r_value**2:.4f}")
-            ax_beer.set_title(compound_title or "Beer-Lambert Plot")
-            ax_beer.set_xlabel("Concentration (mol/dm³)")
-            ax_beer.set_ylabel("Absorbance")
-            ax_beer.legend()
-            ax_beer.grid(True)
-            st.pyplot(fig_beer)
+# === Plotting ===
+for compound in compound_data:
+    name = compound["name"]
+    files = compound["files"]
+    wl_start, wl_end = compound["xrange"]
 
-            buf_beer = BytesIO()
-            fig_beer.savefig(buf_beer, format="png")
-            st.download_button("📥 Download Beer-Lambert Plot", buf_beer.getvalue(), "beerlambert_plot.png", "image/png")
+    st.header(f"{name}")
+    st.subheader("UV-Vis Spectrum")
 
-            st.success("Analysis complete.")
+    fig, ax = plt.subplots(figsize=(10, 5))
+    max_abs = 0
+    peak_data = []
 
-    except Exception as e:
-        st.error(f"An error occurred: {e}")
-else:
-    st.info("Upload your files and enter concentrations to begin.")
+    for fname, conc in files.items():
+        df = pd.read_csv(os.path.join(data_dir, fname), sep="\t", header=None, names=["Wavelength", "Absorbance"])
+        df = df[(df["Wavelength"] >= wl_start) & (df["Wavelength"] <= wl_end)]
+        df = df[df["Absorbance"] > 0]
+
+        sci_val = f"{conc:.2e}".split("e")
+        label = f"${sci_val[0]} \\times 10^{{{int(sci_val[1])}}}$"
+        ax.plot(df["Wavelength"], df["Absorbance"], label=label)
+
+        peak = df.loc[df["Absorbance"].idxmax()]
+        peak_data.append({"Concentration": conc, "Absorbance": peak["Absorbance"], "Lambda_max": peak["Wavelength"]})
+
+        if df["Absorbance"].max() > max_abs:
+            max_abs = df["Absorbance"].max()
+
+    ax.set_xlabel("Wavelength / nm")
+    ax.set_ylabel("Absorbance")
+    ax.set_xlim(wl_start, wl_end)
+    ax.set_ylim(0, max_abs * 1.1)
+    ax.set_title(f"{name} - UV-Vis Spectrum")
+    ax.legend(title="Concentration / mol dm⁻³")
+    st.pyplot(fig)
+
+    # === Beer-Lambert ===
+    st.subheader("Beer-Lambert Plot")
+    df_peak = pd.DataFrame(peak_data).sort_values("Concentration")
+    slope, intercept, r_value, _, _ = linregress(df_peak["Concentration"], df_peak["Absorbance"])
+    df_peak["Fitted"] = slope * df_peak["Concentration"] + intercept
+
+    fig2, ax2 = plt.subplots(figsize=(8, 5))
+    ax2.scatter(df_peak["Concentration"], df_peak["Absorbance"], color='blue')
+    line, = ax2.plot(df_peak["Concentration"], df_peak["Fitted"], color='red', linestyle='--',
+                     label=f"$\\varepsilon$ = {round(slope)} L mol⁻¹ cm⁻¹\n$R^2$ = {r_value**2:.4f}")
+
+    ax2.set_xlabel("Concentration / mol dm⁻³")
+    ax2.set_ylabel("Absorbance")
+    ax2.set_title(f"{name} - Beer-Lambert Plot")
+    ax2.legend(handles=[line])
+    st.pyplot(fig2)
+
+    st.subheader("Peak Absorbance Table")
+    st.dataframe(df_peak)
+
+st.success("Done rendering all compounds.")
