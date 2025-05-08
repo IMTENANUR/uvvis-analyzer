@@ -7,6 +7,9 @@ import os
 st.set_page_config(layout="wide")
 st.title("Multi-Compound UV-Vis & Beer-Lambert Plotter")
 
+# ✅ Ensure the data directory exists
+os.makedirs("data", exist_ok=True)
+
 st.markdown("""
 Upload your `.txt` spectral data files into the `data/` folder.
 Each file must contain **two tab-separated columns**:
